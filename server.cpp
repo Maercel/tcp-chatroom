@@ -12,11 +12,6 @@
 constexpr int PORT = 54000;
 constexpr int BUFFER_SIZE = 1024;
 
-// ANSI codes
-constexpr const char* CLEAR_SCREEN = "\033[2J";   
-constexpr const char* CLEAR_SCROLLBACK = "\033[3J";   // erase scroll history (so the user can't go up in terminal)
-constexpr const char* CURSOR_HOME = "\033[H";    // cursor to top-left of the terminal
-
 struct ClientInfo {
     int socket;
     std::string username;
@@ -28,11 +23,6 @@ ClientInfo adminInfo;
 std::map<int, ClientInfo> clients;
 std::set<std::string> usernames;
 std::mutex clientsMutex;
-
-void clearConsole() noexcept {
-    std::cout << CLEAR_SCROLLBACK << CLEAR_SCREEN << CURSOR_HOME << std::flush;
-}
-
 
 void sendLine(int sock, const std::string& msg) {
     try {
@@ -334,9 +324,6 @@ void handleClient(int clientSock) {
 }
 
 int main(int argc, char* argv[]) {
-
-    clearConsole(); 
-
     int serverSock = socket(AF_INET, SOCK_STREAM, 0);
     if (serverSock < 0) {
         std::cerr << "Socket creation failed\n";

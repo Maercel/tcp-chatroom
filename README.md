@@ -27,7 +27,6 @@ One machine runs the **server**, everyone else connects with the **client**:
 ## 🔨 Build
 
 ```bash
-cd tcp-chatroom
 g++ src/server/main.cpp src/server/Server.cpp -o server
 g++ src/client/main.cpp src/client/Client.cpp -o client
 ```

@@ -19,16 +19,27 @@ constexpr const char* COLOR_GREEN = "\033[32m";
 constexpr const char* COLOR_BLUE = "\033[34m";
 constexpr const char* COLOR_YELLOW = "\033[33m";
 constexpr const char* COLOR_RED = "\033[31m";
+constexpr const char* COLOR_CYAN = "\e[0;36m";
 
 // clear
-constexpr const char* CLEAR_CONSOLE_LINE = "\33[2K";
+constexpr const char* CLEAR_CONSOLE_LINE = "\033[2K";
+constexpr const char* CURSOR_TO_LINE_START = "\r";
+constexpr const char* CLEAR_LINE = "\033[2K";
+constexpr const char* CLEAR_SCREEN = "\033[2J";   
+constexpr const char* CLEAR_SCROLLBACK = "\033[3J";   // erase scroll history (so the user can't go up in terminal)
+constexpr const char* CURSOR_HOME = "\033[H";    // cursor to top-left of the terminal
+
 
 std::atomic<bool> running(true);
-std::string myUsername; // changed: receive thread needs it to redraw the prompt
+std::string myUsername; 
 
 void outputChatPrefix(std::string username) {
     if (username.empty()) throw std::invalid_argument("Username cannot be empty! ");
-    std::cout << COLOR_BLUE << "[" << username << "]: " << COLOR_RESET << std::flush; // changed: no "\n", so typing stays on the same line
+    std::cout << COLOR_CYAN << "[" << username << "]: " << COLOR_RESET << std::flush; 
+}
+
+void clearConsole() noexcept {
+    std::cout << CLEAR_SCROLLBACK << CLEAR_SCREEN << CURSOR_HOME << std::flush;
 }
 
 void receiveThread(int sock) {
@@ -42,14 +53,14 @@ void receiveThread(int sock) {
         if (bytes <= 0) {
             std::cout << COLOR_RED << "\nDisconnected from server.\n" << COLOR_RESET;
             running = false;
-            break; //exit(0) before
+            break; 
         }
         
         buffer[bytes] = '\0';
         std::string data = leftover + std::string(buffer);
         leftover = "";
 
-        std::cout << "\r" << CLEAR_CONSOLE_LINE; // changed: wipe the prompt line before printing incoming messages
+        std::cout << "\r" << CLEAR_CONSOLE_LINE; 
         
         size_t pos = 0;
         while ((pos = data.find('\n')) != std::string::npos) {
@@ -58,7 +69,6 @@ void receiveThread(int sock) {
             
             if (msg.empty()) continue;
             
-            // Remove \r
             if (!msg.empty() && msg.back() == '\r') {
                 msg.pop_back();
             }
@@ -136,18 +146,20 @@ void receiveThread(int sock) {
                         }
                     }
                 } else {
-                        // idk
                         std::cout << COLOR_YELLOW << "[SERVER] " << msg << "\n" << COLOR_RESET;
                     }
                 }
             // any incompletee
             leftover = data;
-
-            if (running) outputChatPrefix(myUsername); // changed: redraw the prompt under the new messages
+            
+            // prompt under messages
+            if (running) outputChatPrefix(myUsername); 
         }
     }
 
 int main() {
+
+    clearConsole(); 
     int sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock < 0) {
         std::cerr << "Socket creation failed\n";
@@ -223,11 +235,11 @@ int main() {
         }
     }
     
-    myUsername = username; // changed: set before the receive thread starts
+    myUsername = username; 
     std::thread(receiveThread, sock).detach();
     
     while (running) {
-        outputChatPrefix(username); // changed: uncommented
+        outputChatPrefix(username); 
 
         std::string text;
         std::getline(std::cin, text);

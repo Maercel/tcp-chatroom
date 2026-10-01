@@ -20,6 +20,7 @@ namespace {
     constexpr const char* COLOR_YELLOW = "\033[33m";
     constexpr const char* COLOR_RED = "\033[31m";
     constexpr const char* COLOR_CYAN = "\033[36m";
+    constexpr const char* COLOR_BRIGHT_WHITE = "\033[97m";
 
     // ANSI codes
     constexpr const char* CURSOR_LINE_START = "\r";          // cursor to the start of the current line
@@ -97,7 +98,7 @@ void Client::receiveThread() {
                     if (role == "ADMIN") {
                         std::cout << COLOR_RED << "[" << username << "]: " << COLOR_RESET << text << "\n";
                     } else {
-                        std::cout << COLOR_BLUE << "[" << username << "]: " << COLOR_RESET << text << "\n";
+                        std::cout << COLOR_BRIGHT_WHITE << "[" << username << "]: " << COLOR_RESET << text << "\n";
                     }
                 }
             }
@@ -155,7 +156,7 @@ void Client::receiveThread() {
                     if (role == "ADMIN") {
                         std::cout << COLOR_RED << "[PRIVATE][" << username << "]: " << COLOR_RESET << text << "\n";
                     } else {
-                        std::cout << COLOR_BLUE << "[PRIVATE][" << username << "]: " << COLOR_RESET << text << "\n";
+                        std::cout << COLOR_BRIGHT_WHITE << "[PRIVATE][" << username << "]: " << COLOR_RESET << text << "\n";
                     }
                 }
             } else {
@@ -194,7 +195,7 @@ int Client::run() {
 
     std::string username;
     while (true) {
-        std::cout << COLOR_BLUE << "Enter username: " << COLOR_RESET;
+        std::cout << COLOR_BRIGHT_WHITE << "Enter username: " << COLOR_RESET;
         if (!std::getline(std::cin, username)) return 1;
 
         if (username.empty()) {

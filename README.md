@@ -16,6 +16,7 @@
 ## 📖 About
 
 A **LAN terminal chatroom** over **TCP protocol**.
+
 One machine runs the **server**, everyone else connects with the **client**:
 
 - Public and private messages

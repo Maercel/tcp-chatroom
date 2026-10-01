@@ -239,7 +239,7 @@ int main() {
     std::thread(receiveThread, sock).detach();
     
     while (running) {
-        outputChatPrefix(username); 
+        currentUserChatPrefix(username); 
 
         std::string text;
         std::getline(std::cin, text);

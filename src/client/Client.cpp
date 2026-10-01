@@ -288,7 +288,6 @@ int Client::run() {
             if (send(m_sock, kickMsg.c_str(), kickMsg.size(), 0) < 0) {
                 std::cerr << "Failed to send kick command\n";
             }
-            continue;
         }
 
         if (text.rfind("/private ", 0) == 0) {

@@ -33,7 +33,7 @@ constexpr const char* CURSOR_HOME = "\033[H";    // cursor to top-left of the te
 std::atomic<bool> running(true);
 std::string myUsername; 
 
-void outputChatPrefix(std::string username) {
+void currentUserChatPrefix(std::string username) {
     if (username.empty()) throw std::invalid_argument("Username cannot be empty! ");
     std::cout << COLOR_CYAN << "[" << username << "]: " << COLOR_RESET << std::flush; 
 }
@@ -153,7 +153,7 @@ void receiveThread(int sock) {
             leftover = data;
             
             // prompt under messages
-            if (running) outputChatPrefix(myUsername); 
+            if (running) currentUserChatPrefix(myUsername); 
         }
     }
 

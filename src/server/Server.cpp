@@ -1,40 +1,88 @@
+#include "Server.hpp"
+
 #include <iostream>
 #include <thread>
-#include <map>
-#include <set>
-#include <mutex>
 #include <vector>
 #include <sstream>
+#include <stdexcept>
 #include <cstring>
 #include <unistd.h>
 #include <arpa/inet.h>
 
-constexpr int PORT = 54000;
 constexpr int BUFFER_SIZE = 1024;
 
 // ANSI codes
 constexpr const char* CLEAR_SCREEN = "\033[2J";   
-constexpr const char* CLEAR_SCROLLBACK = "\033[3J";   // erase scroll history (so the user can't go up in terminal)
-constexpr const char* CURSOR_HOME = "\033[H";    // cursor to top-left of the terminal
+constexpr const char* CLEAR_SCROLLBACK = "\033[3J"; // erase scroll history (so the user can't go up in terminal)
+constexpr const char* CURSOR_HOME = "\033[H";   // cursor to top-left of the terminal
 
-struct ClientInfo {
-    int socket;
-    std::string username;
-    bool isAdmin = false;
-};
+Server::Server(uint16_t port) : m_port(port) {
 
-ClientInfo adminInfo; 
+    clearConsole(); 
 
-std::map<int, ClientInfo> clients;
-std::set<std::string> usernames;
-std::mutex clientsMutex;
+    m_serverSock = socket(AF_INET, SOCK_STREAM, 0);
+    if (m_serverSock < 0) {
+        throw std::runtime_error("Socket creation failed");
+    }
+    
+    int yes = 1;
+    if (setsockopt(m_serverSock, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)) < 0) {
+        if (m_serverSock >= 0) {
+            if (close(m_serverSock) < 0) {
+                std::cerr << "[Server] Failed to close socket after SO_REUSEADDR failed. " << m_serverSock 
+                        << ": " << strerror(errno) << std::endl;
+            }
+        }
+        throw std::runtime_error("Failed to set SO_REUSEADDR");
+    }
+    
+    sockaddr_in serverAddr{};
+    serverAddr.sin_family = AF_INET;
+    serverAddr.sin_port = htons(m_port);
+    serverAddr.sin_addr.s_addr = INADDR_ANY;
+    
+    if (bind(m_serverSock, (sockaddr*)&serverAddr, sizeof(serverAddr)) < 0) {
+        throw std::runtime_error("Bind failed");
+    }
+    
+    if (listen(m_serverSock, 10) < 0) {
+        throw std::runtime_error("Listen failed");
+    }
+}
 
-void clearConsole() noexcept {
+Server::~Server() {
+    if (m_serverSock >= 0) {
+        if (close(m_serverSock) < 0) {
+            std::cerr << "[Server] Failed to close socket at the end of main()" << m_serverSock 
+                    << ": " << strerror(errno) << std::endl;
+        }
+    }
+}
+
+void Server::acceptClients() {
+    std::cout << "Server listening on port " << m_port << "\n";
+    
+    while (true) {
+        sockaddr_in clientAddr{};
+        socklen_t clientLen = sizeof(clientAddr);
+        int clientSock = accept(m_serverSock, (sockaddr*)&clientAddr, &clientLen);
+        
+        if (clientSock < 0) {
+            std::cerr << "Accept failed\n";
+            continue;
+        }
+        
+        std::cout << "[Server] Accepted connection on socket " << clientSock << "\n";
+        std::thread(&Server::handleClient, this, clientSock).detach();
+    }
+}
+
+void Server::clearConsole() const noexcept {
     std::cout << CLEAR_SCROLLBACK << CLEAR_SCREEN << CURSOR_HOME << std::flush;
 }
 
 
-void sendLine(int sock, const std::string& msg) {
+void Server::sendLine(int sock, const std::string& msg) const noexcept {
     try {
         std::string fullMsg = msg;
         if (!fullMsg.empty() && fullMsg.back() != '\n') fullMsg += '\n';
@@ -48,12 +96,12 @@ void sendLine(int sock, const std::string& msg) {
 }
 
 
-void broadcast(const std::string& msg, int excludeSock = -1) {
+void Server::broadcast(const std::string& msg, int excludeSock) const {
     std::vector<int> sockets;
     
     {
-        std::lock_guard<std::mutex> lock(clientsMutex);
-        for (auto& [sock, _] : clients) {
+        std::lock_guard<std::mutex> lock(m_clientsMutex);
+        for (auto& [sock, _] : m_clients) {
             if (sock != excludeSock) {
                 sockets.push_back(sock);
             }
@@ -70,18 +118,20 @@ void broadcast(const std::string& msg, int excludeSock = -1) {
     }
 }
 
-void removeClient(int sock) {
+void Server::removeClient(int sock) {
     std::string name;
     bool wasAdmin = false;
     {
-        std::lock_guard<std::mutex> lock(clientsMutex);
-        if (!clients.count(sock)) return;
-        
-        name = clients[sock].username;
-        wasAdmin = clients[sock].isAdmin; 
+        std::lock_guard<std::mutex> lock(m_clientsMutex);
+        if (!m_clients.count(sock)) return;
 
-        usernames.erase(name);
-        clients.erase(sock);
+        
+        
+        name = m_clients[sock].username;
+        wasAdmin = m_clients[sock].isAdmin; 
+
+        m_usernames.erase(name);
+        m_clients.erase(sock);
     }
     
     std::cout << "[Server] User '" << name << "' disconnected\n";
@@ -89,17 +139,19 @@ void removeClient(int sock) {
 
     if (wasAdmin) {
         int newAdminSock = -1;
+        std::string newAdminName; 
         {
-            std::lock_guard<std::mutex> lock(clientsMutex);
-            if (!clients.empty()) {
-                newAdminSock = clients.begin()->first;
-                clients[newAdminSock].isAdmin = true;
+            std::lock_guard<std::mutex> lock(m_clientsMutex);
+            if (!m_clients.empty()) {
+                newAdminSock = m_clients.begin()->first;
+                m_clients[newAdminSock].isAdmin = true;
+                newAdminName = m_clients.at(newAdminSock).username; 
             }
         }
 
-        if (newAdminSock != -1) {
-            sendLine(newAdminSock, "SYSTEM|You are now the admin");
-            broadcast("SYSTEM|User '" + clients[newAdminSock].username + "' is now the admin", newAdminSock);
+         if (newAdminSock != -1) {
+            sendLine(newAdminSock, "ROLE|ADMIN");
+            broadcast("SYSTEM|User '" + newAdminName+ "' is now the admin", newAdminSock);
         }
     }
 
@@ -110,7 +162,7 @@ void removeClient(int sock) {
             }
 }
 
-void handleClient(int clientSock) {
+void Server::handleClient(int clientSock) {
     try {
         char buffer[BUFFER_SIZE];
         std::string username;
@@ -166,20 +218,20 @@ void handleClient(int clientSock) {
             bool makeAdmin = false; 
 
             {
-                std::lock_guard<std::mutex> lock(clientsMutex);
-                if (clients.empty()) {
-                    usernames.insert(username);
-                    clients[clientSock] = {clientSock, username, true}; // admin
+                std::lock_guard<std::mutex> lock(m_clientsMutex);
+                if (m_clients.empty()) {
+                    m_usernames.insert(username);
+                    m_clients[clientSock] = {clientSock, username, true}; // admin
                     sendLine(clientSock, "JOIN_OK|ADMIN");
                     std::cout << "[Server] User '" << username << "' joined successfully\n";
                     insertUsername = true; 
                 }
-                else if (usernames.count(username)) {
+                else if (m_usernames.count(username)) {
                     sendLine(clientSock, "JOIN_FAIL|Username already taken");
                     std::cout << "Username taken\n";
                 } else {
-                    usernames.insert(username);
-                    clients[clientSock] = {clientSock, username};
+                    m_usernames.insert(username);
+                    m_clients[clientSock] = {clientSock, username};
                     sendLine(clientSock, "JOIN_OK");
                     std::cout << "[Server] User '" << username << "' joined successfully\n";
                     insertUsername = true; 
@@ -222,8 +274,8 @@ void handleClient(int clientSock) {
 
                 bool first = true;
                 {
-                    std::lock_guard<std::mutex> lock(clientsMutex);
-                    for (auto& [_, client] : clients) {
+                    std::lock_guard<std::mutex> lock(m_clientsMutex);
+                    for (auto& [_, client] : m_clients) {
                         if (!first) oss << ",";
                         first = false;
 
@@ -247,9 +299,9 @@ void handleClient(int clientSock) {
 
                 bool isAdmin = false;
                 {
-                    std::lock_guard<std::mutex> lock(clientsMutex);
-                    if (clients.count(clientSock)) {
-                        isAdmin = clients[clientSock].isAdmin;
+                    std::lock_guard<std::mutex> lock(m_clientsMutex);
+                    if (m_clients.count(clientSock)) {
+                        isAdmin = m_clients[clientSock].isAdmin;
                     }
                 }
 
@@ -261,15 +313,15 @@ void handleClient(int clientSock) {
                 int targetSock = -1;
 
                 {
-                    std::lock_guard<std::mutex> lock(clientsMutex);
+                    std::lock_guard<std::mutex> lock(m_clientsMutex);
                     
-                    if (!clients[clientSock].isAdmin) {
+                    if (!m_clients[clientSock].isAdmin) {
                         sendLine(clientSock, "SYSTEM|You are not admin, cannot kick");
                         continue;
                     }
 
                     
-                    for (auto& [sock, client] : clients) {
+                    for (auto& [sock, client] : m_clients) {
                         if (client.username == targetUser) {
                             targetSock = sock;
                             break;
@@ -302,8 +354,8 @@ void handleClient(int clientSock) {
 
                 int targetSock = -1;
                 {
-                    std::lock_guard<std::mutex> lock(clientsMutex);
-                    for (auto& [sock, client] : clients) {
+                    std::lock_guard<std::mutex> lock(m_clientsMutex);
+                    for (auto& [sock, client] : m_clients) {
                         if (client.username == targetUser) {
                             targetSock = sock;
                             break;
@@ -316,14 +368,12 @@ void handleClient(int clientSock) {
                 } else {
                     std::string role = "USER";
                     {
-                        std::lock_guard<std::mutex> lock(clientsMutex);
-                        if (clients.count(clientSock) && clients[clientSock].isAdmin)
+                        std::lock_guard<std::mutex> lock(m_clientsMutex);
+                        if (m_clients.count(clientSock) && m_clients[clientSock].isAdmin) 
                             role = "ADMIN";
                     }
 
-                    sendLine(targetSock, "PRIVATE|" + role + "|" + clients[clientSock].username + "|" + privateText);
-
-                    //sendLine(clientSock, "SYSTEM|Private message sent to '" + targetUser + "'");
+                    sendLine(targetSock, "PRIVATE|" + role + "|" + username + "|" + privateText);
                 }
             }
         }
@@ -331,66 +381,4 @@ void handleClient(int clientSock) {
     } catch(const std::exception& e) {
         std::cerr << "[Server] Exception: " << e.what() << std::endl;
     }
-}
-
-int main(int argc, char* argv[]) {
-
-    clearConsole(); 
-
-    int serverSock = socket(AF_INET, SOCK_STREAM, 0);
-    if (serverSock < 0) {
-        std::cerr << "Socket creation failed\n";
-        return 1;
-    }
-    
-    int yes = 1;
-    if (setsockopt(serverSock, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)) < 0) {
-        std::cerr << "Failed to set SO_REUSEADDR\n";
-        if (serverSock >= 0) {
-            if (close(serverSock) < 0) {
-                std::cerr << "[Server] Failed to close socket after SO_REUSEADDR failed. " << serverSock 
-                        << ": " << strerror(errno) << std::endl;
-            }
-        }
-        return -1;
-    }
-    
-    sockaddr_in serverAddr{};
-    serverAddr.sin_family = AF_INET;
-    serverAddr.sin_port = htons(PORT);
-    serverAddr.sin_addr.s_addr = INADDR_ANY;
-    
-    if (bind(serverSock, (sockaddr*)&serverAddr, sizeof(serverAddr)) < 0) {
-        std::cerr << "Bind failed\n";
-        return 1;
-    }
-    
-    if (listen(serverSock, 10) < 0) {
-        std::cerr << "Listen failed\n";
-        return 1;
-    }
-    
-    std::cout << "Server listening on port " << PORT << "\n";
-    
-    while (true) {
-        sockaddr_in clientAddr{};
-        socklen_t clientLen = sizeof(clientAddr);
-        int clientSock = accept(serverSock, (sockaddr*)&clientAddr, &clientLen);
-        
-        if (clientSock < 0) {
-            std::cerr << "Accept failed\n";
-            continue;
-        }
-        
-        std::cout << "[Server] Accepted connection on socket " << clientSock << "\n";
-        std::thread(handleClient, clientSock).detach();
-    }
-    
-    if (serverSock >= 0) {
-        if (close(serverSock) < 0) {
-            std::cerr << "[Server] Failed to close socket at the end of main()" << serverSock 
-                    << ": " << strerror(errno) << std::endl;
-        }
-    }
-    return 0;
 }

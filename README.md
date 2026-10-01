@@ -15,7 +15,9 @@
 
 ## 📖 About
 
-A **LAN terminal chatroom** over **TCP protocol**.
+**LAN terminal chatroom** built in C++17 using **TCP protocol**.
+
+**Linux only.**
 
 One machine runs the **server**, everyone else connects with the **client**:
 

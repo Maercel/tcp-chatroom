@@ -57,7 +57,7 @@ Start the server, then connect one client per terminal. The client connects to `
 
 Every message is one line, with parts split by `|`.
 
-**Client -> Server**
+**Client ➡️ Server**
 ````
 JOIN|alice      - join as alice
 MSG|hello       - message to everyone
@@ -67,7 +67,7 @@ USERS           - get users list
 QUIT            - leave chatroom
 ````
 
-**Server -> Client**
+**Server ➡️ Client**
 ````
 JOIN_OK                     - joined
 JOIN_OK|ADMIN               - joined as admin (first user)

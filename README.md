@@ -45,7 +45,7 @@ Start the server, then connect one client per terminal. The client connects to `
 
 ## 💬 Commands
 
-- **no prefix** - send a message to everyone
+- **No prefix** - send a message to everyone
 - **/private name text** - send a private message to an online user with name
 - **/users** - show's a list of online people 
 - **/kick name** - kick a user (admin only)
